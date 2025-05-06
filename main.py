@@ -6,7 +6,9 @@ from agents.mcp import MCPServerStdio
 import cv2
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
-from agents import Agent, Runner, function_tool, set_default_openai_client, set_default_openai_api, set_tracing_disabled
+from agents import Agent, Runner, function_tool,image_function_tool
+from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
+
 import logging
 import asyncio
 
@@ -30,20 +32,7 @@ client = OpenAI(
     api_key=OPENAI_API_KEY,
 )
 
-# --- Agent Tool Definitions ---
-def encode_frame(image_path):
-    """
-    Encodes a frame as a base64 string.
-    
-    Args:
-        frame: The frame to encode.
-        
-    Returns:
-        A base64 encoded string of the frame.
-    """
-    with open(image_path, "rb") as f:
-        return base64.b64encode(f.read()).decode('utf-8')
-
+@image_function_tool
 def capture_encode_frame(stream_url: str, image_path: str) -> str:
     """
     Captures a single frame from the specified RTSP stream and returns it as a base64 encoded string.
@@ -83,7 +72,8 @@ def capture_encode_frame(stream_url: str, image_path: str) -> str:
 
         base64_image1 = base64.b64encode(buffer1).decode('utf-8')
         
-        return base64_image1
+        return f"data:image/jpeg;base64,{base64_image1}"
+
     except Exception as e:
         error_msg = f"Exception during frame capture/encoding: {e}"
         logging.error(error_msg, exc_info=True)
@@ -111,9 +101,11 @@ async def run_monitoring_cycle():
         # --- Agent Setup ---
         security_agent = Agent(
             name="WhatsCAMM Security Monitor Agent",
-            model="gpt-4o-mini",
+            model="gpt-4.1",
         instructions=(
+            RECOMMENDED_PROMPT_PREFIX +
             "You are a security camera monitoring agent. Your goal is to analyze frames for suspicious activity, and report the current situation via WhatsApp in every situation regardless of the activity, whether it is normal or suspicious.\n"
+            "You can obtain the frames from the following URLs: " + RTSP_STREAM_URL1 + " and " + RTSP_STREAM_URL2 + ".\n"
             f"The recipient is '{WHATSAPP_RECIPIENT}'. Craft a detailed but concise message summarizing the key findings from the judgment for each room.\n"
             "Please follow the format below: \n"
             "Alarm Triggered: [yes/no] (if yes put an emoji)\n"
@@ -122,29 +114,13 @@ async def run_monitoring_cycle():
             "If there is a suspicious activity, please send the camera media stored in /Users/volkanaydingul/Documents/Codes/whatscamm/frame1.jpg and /Users/volkanaydingul/Documents/Codes/whatscamm/frame2.jpg.\n"
             "Do not ask for an additional confirmation or permission. Just send the message after compiling your judgment!"
         ),
+        tools=[capture_encode_frame],
         mcp_servers=[mcp_server],
     )
 
         logging.info("Starting new monitoring cycle...")
-        base64_image1 = capture_encode_frame(RTSP_STREAM_URL1, "frame1.jpg")
-        base64_image2 = capture_encode_frame(RTSP_STREAM_URL2, "frame2.jpg")
-        goal = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_image",
-                        "detail": "auto",
-                        "image_url": f"data:image/jpeg;base64,{base64_image1}",
-                    },
-                    {
-                        "type": "input_image",
-                        "detail": "auto",
-                        "image_url": f"data:image/jpeg;base64,{base64_image2}",
-                    }
-                ],
-            },
-        ]
+
+        goal = "Monitor the security cameras and report the current situation via WhatsApp in every situation regardless of the activity, whether it is normal or suspicious."
         result = await Runner.run(security_agent, goal)
         logging.info(f"Cycle finished. Agent output: {result.final_output}")
         return result
