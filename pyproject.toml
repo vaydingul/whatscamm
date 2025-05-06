@@ -1,0 +1,17 @@
+[project]
+name = "whatscamm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ipykernel>=6.29.5",
+    "openai>=1.76.2",
+    "openai-agents>=0.0.14",
+    "opencv-python-headless>=4.11.0.86",
+    "pillow>=11.2.1",
+    "playwright>=1.52.0",
+    "python-dotenv>=1.1.0",
+    "requests>=2.32.3",
+    "ruff>=0.11.7",
+]
